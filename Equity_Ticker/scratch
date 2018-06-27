@@ -1,0 +1,2 @@
+
+SELECT "Close" FROM Dax ORDER BY date DESC LIMIT 20
