@@ -1,0 +1,2 @@
+
+SELECT * FROM Dax WHERE Date > DATE('2016-01-01') and Date < DATE('2017-08-04')
