@@ -1,4 +1,5 @@
 
+import sys
 
 import PortfolioApplication.DatabaseManagement as Dbm
 import PortfolioApplication.Computations as Cmp
@@ -7,6 +8,8 @@ import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.ticker import PercentFormatter
 from matplotlib.figure import Figure
+
+import matplotlib.pyplot as plt
 
 from PortfolioApplication.UserInterface.ShowTransactions import CustomSqlModel as SqlM
 import PortfolioApplication.UserInterface.TransactionForms as TransForms
@@ -19,9 +22,9 @@ from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 
 
-class MatplotlibWidget(QWidget):
+class PerformanceWidget(QWidget):
     def __init__(self, parent=None):
-        super(MatplotlibWidget, self).__init__(parent)
+        super(PerformanceWidget, self).__init__(parent)
 
         self.figure = Figure()
         self.canvas = FigureCanvasQTAgg(self.figure)
@@ -41,6 +44,9 @@ class MyWindow(QMainWindow):
         loadUi('/Users/setor/PycharmProjects/PortfolioManager/PortfolioApplication/UserInterface/'
                'UI Templates/Main_main.ui', self)
 
+        '''set the 'tables' '''
+        self.setWindowTitle("SB Portfolio Manager")
+
         '''Initiate all relevant selfs'''
         self.sec_dialog = QDialog()
         self.cash_dialog = QDialog()
@@ -55,7 +61,7 @@ class MyWindow(QMainWindow):
         # self.label.mousePressEvent = self.doSomething
 
         '''Setup the Performance Widget'''
-        self.matplotlibWidget = MatplotlibWidget(self)
+        self.matplotlibWidget = PerformanceWidget(self)
         self.PlotBackGround.addWidget(self.matplotlibWidget)
 
         # start date
@@ -86,10 +92,12 @@ class MyWindow(QMainWindow):
 
         startdate = self.dateEdit.date().toPyDate()
         enddate = self.dateEdit_2.date().toPyDate()
+        data = pd.DataFrame()
         if stock == "" or bmark == "":
-            data = get_dataframe(["Dax", "Drone Delivery Canada"], startdate=startdate, enddate=enddate)
+            data = MyWindow.get_dataframe(["Dax", "Drone Delivery Canada"], startdate=startdate, enddate=enddate)
         else:
-            data = get_dataframe([bmark, stock], startdate=startdate, enddate=enddate)
+            data = MyWindow.get_dataframe([bmark, stock], startdate=startdate, enddate=enddate)
+            pass
 
         self.matplotlibWidget.axis.plot(data)
         self.matplotlibWidget.axis.legend([bmark, stock])
@@ -133,26 +141,23 @@ class MyWindow(QMainWindow):
     # def doSomething(self, event):
         # print('Hey')
 
+    @staticmethod
+    def get_dataframe(names, startdate, enddate):
+        basic = pd.DataFrame()
 
-def get_dataframe(names, startdate, enddate):
-    frame = pd.DataFrame()
+        # create a DataFrame with columns being the different names
+        for name in names:
+            df = Dbm.get_prices(name, startdate=startdate, enddate=enddate)
+            df['Date'] = pd.to_datetime(df['Date'])
+            df = df.set_index('Date')
+            basic = pd.concat([basic, df], ignore_index=True, axis=1)
 
-    # create a DataFrame with columns being the different names
-    for name in names:
-        df = Dbm.get_prices(name, startdate=startdate, enddate=enddate)
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.set_index('Date')
-        frame = pd.concat([frame, df], ignore_index=True, axis=1)
+        normalized = Cmp.normalize_prices(basic, names)
 
-    normalized = Cmp.normalize_prices(frame)
-    normalized.columns = names
-
-    return normalized
+        return normalized
 
 
 if __name__ == "__main__":
-    import sys
-
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName('MyWindow')
 

@@ -149,6 +149,7 @@ def upload_cash_transaction(date, typ, amount, fees, tax, notes):
 def read_transactions():
     conn = sqlite3.connect(db)
     df = pd.read_sql_query("SELECT * FROM main.Transactions", conn)
+    conn.close()
     return df
 
 
@@ -164,11 +165,34 @@ def get_prices(name, startdate=None, enddate=None):
     else:
         query = "SELECT * FROM '{}' WHERE DATE > DATE('{}') AND DATE < DATE('{}')".format(name, startdate, enddate)
     df = pd.read_sql_query(query, conn)
-    df = df.loc[:, ['Date', 'Close']]
+    df = df.loc[:, ['Date', 'Adj Close']]
+    conn.close()
     return df
 
 
+def get_transactions():
+    conn = sqlite3.connect(db)
+    query = '''SELECT * FROM main.Transactions'''
+    transactions = pd.read_sql_query(query, conn)
+    conn.close()
+    return transactions
+
+
+def get_cash_transactions():
+    conn = sqlite3.connect(db)
+    query = '''SELECT * FROM main.CashActions ORDER BY Date'''
+    transactions = pd.read_sql_query(query, conn)
+    conn.close()
+    return transactions
+
+
+def get_alternative_investments():
+    conn = sqlite3.connect(db)
+    query = '''SELECT * FROM main.AlternativeInvestments ORDER BY Date'''
+    transactions = pd.read_sql_query(query, conn)
+    conn.close()
+    return transactions
+
+
 if __name__ == '__main__':
-    df1 = get_prices('Infineon')
-    add_stock(['Wells Fargo'], ['NWT.DE'], ['Stock'])
-    print(df1.tail())
+    pass

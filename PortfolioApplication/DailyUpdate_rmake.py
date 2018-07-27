@@ -1,6 +1,4 @@
 
-from alpha_vantage.timeseries import TimeSeries
-
 import sqlite3
 
 from datetime import datetime as dt
@@ -8,10 +6,10 @@ import time
 
 import pandas as pd
 
-# pd.core.common.is_list_like = pd.api.types.is_list_like
+pd.core.common.is_list_like = pd.api.types.is_list_like
 
-# from pandas_datareader import data as pdr
-# import fix_yahoo_finance as yf
+from pandas_datareader import data as pdr
+import fix_yahoo_finance as yf
 
 
 db = '/Users/setor/PycharmProjects/PortfolioManager/PortfolioApplication/Portfolio Data'
@@ -34,14 +32,22 @@ def sym_to_name(symbol):
 
 
 # uses the alphavantae API to receive the stock Data daily
-# returns a pandas DataFRame Object
-def get_prices(symbol):
-    ts = TimeSeries(key='NM4PJC65CNJLYGGU', output_format='pandas')
-    data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
+# returns a pandas DataFrame Object
+def get_prices(symbol, startdate):
+
+    end_sp = str(dt.today())
+    end_sp = end_sp[:10]
+
+    yf.pdr_override()  # <== that's all it takes :-)
+
+    # alternative_date = str(pd.to_datetime('2018-03-01'))
+
+    data = pdr.get_data_yahoo(symbol, startdate, end_sp)
+
+    data = data[data['Open'] != 0]
+    data = data.loc[:, ['Open', 'High', 'Low', 'Adj Close', 'Volume']]
     data = data.reset_index()
-    data = data[data['1. open'] != 0]
-    data = data.rename(index=str, columns={"date": "Date", "1. open": "Open", "2. high": "High", "3. low": 'Low',
-                                           '4. close': 'Close', '5. volume': 'Volume'})
+
     return data
 
 
@@ -80,35 +86,47 @@ def find_new_values(df, date):
 
 def update(symbol):
     conn = sqlite3.connect(db)
+    c = conn.cursor()
 
     # receive the corresponding name and the last date in the column
     # name and ticker have to be in stocklist crucial actually
 
     name = sym_to_name(symbol)
 
-    last_date = pd.to_datetime(get_last_date(name))
+    tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
+
     today = str(dt.today())
     today = today[:10]
     today = dt.strptime(today, '%Y-%m-%d')
 
-    print(last_date, today)
-    if last_date == today:
-        print('Already up to date')
-        time.sleep(15)
+    new_data = pd.DataFrame()
+
+    if name not in tables.values:
+        start_sp = dt(2001, 1, 1)
+        new_data = get_prices(symbol, start_sp)
+        new_data = new_data.set_index('Date')
+        store_data(new_data, name)
         return
-    else:
-        # get new data to append
-        new_data = get_prices(symbol)
+    # last_date = get_last_date(name)
+    elif pd.to_datetime(get_last_date(name)) == today:
+        print('Already up to date')
+        return
+    elif pd.to_datetime(get_last_date(name)) != today:
+        last_date = pd.to_datetime(get_last_date(name))
+        new_data = get_prices(symbol, last_date)
         try:
             new_data = new_data.set_index('Date')
             store_data(new_data, name)
         except ValueError:
             new_data = new_data.reset_index()
             needed_values = find_new_values(new_data, last_date)
-
-            sql = 'INSERT INTO "{}" VALUES (?,?,?,?,?,?)'.format(name)
-            needed_values['Date'] = needed_values.loc[:, 'Date'].apply(lambda x: (str(x)[:10]))
-            conn.executemany(sql, needed_values.values)
+            if needed_values.empty:
+                return
+            else:
+                sql = 'INSERT INTO "{}" VALUES (?,?,?,?,?,?)'.format(name)
+                needed_values.loc[:, ['Date']] = needed_values.loc[:, 'Date'].apply(lambda x: (str(x)[:10]))
+                c.executemany(sql, needed_values.values)
+            # time.sleep(15)
 
             conn.commit()
 
@@ -126,7 +144,6 @@ def update_all():
 
 # need the symbols
 # return a list of the tickers
-
 # returns a list of all symbols in stocklist
 def get_all_symbols():
     conn = sqlite3.connect(db)
@@ -139,4 +156,5 @@ def get_all_symbols():
 
 
 if __name__ == '__main__':
+    # TODO transformation with yahoo updating still not perfectly fine
     update_all()
