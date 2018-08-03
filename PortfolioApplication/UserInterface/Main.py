@@ -3,6 +3,11 @@ import sys
 
 import PortfolioApplication.DatabaseManagement as Dbm
 import PortfolioApplication.Computations as Cmp
+import PortfolioApplication.Portfolio as Pf
+import PortfolioApplication.Speedup as Speed
+
+import PortfolioApplication.DailyUpdate_rmake as DaU
+
 import pandas as pd
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
@@ -37,14 +42,31 @@ class PerformanceWidget(QWidget):
         self.layoutVertical.addWidget(self.canvas)
 
 
+class AssetDistribution(QWidget):
+    def __init__(self, parent=None):
+        super(AssetDistribution, self).__init__(parent)
+
+        self.figure = Figure()
+        self.canvas = FigureCanvasQTAgg(self.figure)
+
+        self.axis = self.figure.add_subplot(111)
+
+        self.layoutVertical = QtWidgets.QVBoxLayout(self)  # QVBoxLayout
+        self.layoutVertical.addWidget(self.canvas)
+
+
 class MyWindow(QMainWindow):
     def __init__(self, parent=None):
         super(MyWindow, self).__init__(parent)
 
+        # initialize Portfolio
+        self.portfolio = Speed.Portfolio()
+        DaU.update_all()
+
         loadUi('/Users/setor/PycharmProjects/PortfolioManager/PortfolioApplication/UserInterface/'
                'UI Templates/Main_main.ui', self)
 
-        '''set the 'tables' '''
+        '''set the "tables" '''
         self.setWindowTitle("SB Portfolio Manager")
 
         '''Initiate all relevant selfs'''
@@ -56,6 +78,7 @@ class MyWindow(QMainWindow):
         self.actionSecurity.triggered.connect(self.display_securitytransaction)
         self.actionShow_Performance.triggered.connect(self.display_showperformance)
         self.actionCash.triggered.connect(self.display_cashtransaction)
+        self.actionShow_Asset_Distribution.triggered.connect(self.display_asset_distribution)
 
         # make labels clickable
         # self.label.mousePressEvent = self.doSomething
@@ -64,19 +87,28 @@ class MyWindow(QMainWindow):
         self.matplotlibWidget = PerformanceWidget(self)
         self.PlotBackGround.addWidget(self.matplotlibWidget)
 
+        '''Setup Asset Distribution Widget'''
+        self.matplotlibWidget2 = AssetDistribution(self)
+        self.DistributionBackGround.addWidget(self.matplotlibWidget2)
+
+        self.dateEdit_3.setDate(dt.today())
+
         # start date
         self.dateEdit.setDate(dt.now() - timedelta(days=365))
         # end date
         self.dateEdit_2.setDate(dt.today())
 
-        self.pushButton.clicked.connect(self.get_plot)
+        # update plots
+        self.pushButton.clicked.connect(self.create_performance_plot)
+        self.pushButton_2.clicked.connect(self.create_asset_distribution_plot)
 
         # comboBox Stock
         self.cbox_options()
         # comboBox Benchmark
         self.cbox2_options()
 
-        self.get_plot()
+        self.create_performance_plot()
+        self.create_asset_distribution_plot()
 
         '''Setup the Show Transactions Widget'''
         data = SqlM()
@@ -84,7 +116,7 @@ class MyWindow(QMainWindow):
         self.tableView.setModel(data)
         self.tableView.setWindowTitle("All Transactions")
 
-    def get_plot(self):  # creates initial plot and updates it
+    def create_performance_plot(self):  # creates initial plot and updates it
         self.matplotlibWidget.axis.clear()
 
         stock = self.comboBox.currentText()
@@ -92,15 +124,17 @@ class MyWindow(QMainWindow):
 
         startdate = self.dateEdit.date().toPyDate()
         enddate = self.dateEdit_2.date().toPyDate()
+
+        # a empty dataframe needs to be created so no errors evolve
         data = pd.DataFrame()
         if stock == "" or bmark == "":
-            data = MyWindow.get_dataframe(["Dax", "Drone Delivery Canada"], startdate=startdate, enddate=enddate)
+            data = self.get_dataframe(["Dax", "Drone Delivery Canada"], startdate=startdate, enddate=enddate)
         else:
-            data = MyWindow.get_dataframe([bmark, stock], startdate=startdate, enddate=enddate)
+            data = self.get_dataframe([bmark, stock], startdate=startdate, enddate=enddate)
             pass
 
         self.matplotlibWidget.axis.plot(data)
-        self.matplotlibWidget.axis.legend([bmark, stock])
+        self.matplotlibWidget.axis.legend(data.columns)
 
         self.matplotlibWidget.axis.yaxis.tick_right()
 
@@ -113,6 +147,34 @@ class MyWindow(QMainWindow):
         self.matplotlibWidget.axis.grid(color='grey', linestyle='-', linewidth=0.5, alpha=0.3)
         self.matplotlibWidget.axis.yaxis.set_major_formatter(PercentFormatter())
         self.matplotlibWidget.canvas.draw()
+
+    def create_asset_distribution_plot(self):
+        self.matplotlibWidget2.axis.clear()
+
+        def make_autopct(values):
+            def my_autopct(pct):
+                total = sum(values)
+                val = int(round(pct * total / 100.0))
+                return '{v:d} €'.format(v=val)
+
+            return my_autopct
+
+        date = self.dateEdit_3.date().toPyDate()
+        date = pd.to_datetime(date)
+        df = Dbm.get_spot_portfolio_valuation(pd.to_datetime(date))
+
+        df = df.drop(labels=['Date', 'Total Value'], axis=1)
+        df = df.loc[:, (df != 0).any(axis=0)]
+        for i in df.columns:
+            df.loc[:, i] = round(df.loc[:, i], 3)
+
+        labels = list(df.columns)
+        data = list(df.values[0, :])
+
+        self.matplotlibWidget2.axis.pie(data, wedgeprops=dict(width=0.3, linewidth=7, edgecolor='white'), startangle=90,
+                                        shadow=False, labels=labels, autopct=make_autopct(data))
+
+        self.matplotlibWidget2.canvas.draw()
 
     def cbox_options(self):
         # use get stock names function from DatabaseManagement
@@ -137,12 +199,14 @@ class MyWindow(QMainWindow):
     def display_showperformance(self):
         self.stackedWidget.setCurrentIndex(0)
 
+    def display_asset_distribution(self):
+        self.stackedWidget.setCurrentIndex(2)
+
     # this function is for label click events
     # def doSomething(self, event):
         # print('Hey')
 
-    @staticmethod
-    def get_dataframe(names, startdate, enddate):
+    def get_dataframe(self, names, startdate, enddate):
         basic = pd.DataFrame()
 
         # create a DataFrame with columns being the different names
@@ -152,9 +216,16 @@ class MyWindow(QMainWindow):
             df = df.set_index('Date')
             basic = pd.concat([basic, df], ignore_index=True, axis=1)
 
-        normalized = Cmp.normalize_prices(basic, names)
+        basic.columns = names
+        normalized = Cmp.normalize_prices(basic)
+        dates = list(normalized.index)
 
-        return normalized
+        portfolio = self.portfolio.connector_performance_viewer(dates=dates)
+        portfolio.columns = ['Porfolio']
+        combined = pd.concat([normalized, portfolio], axis=1)
+        combined = combined.fillna(method='ffill')
+
+        return combined
 
 
 if __name__ == "__main__":

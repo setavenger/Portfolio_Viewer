@@ -4,16 +4,14 @@ import matplotlib.pyplot as plt
 
 
 # returns a df normalized to percent an rplaces Nan values with previous day values for smooth looking plot lines
-def normalize_prices(df, names):
+def normalize_prices(df: pd.DataFrame):
+    df = df.fillna(method='ffill')
     for i in df.columns:
-        index = "{}".format(df.iloc[:, i].first_valid_index())
+        index = "{}".format(df.loc[:, i].first_valid_index())
         index = index[:10]
         first = df.loc[index, i]
 
-        df[i] = df[i].apply(lambda x: (x/first)*100)
-
-    df.columns = names
-    df = fill_gaps(df, names=names)
+        df.loc[:, i] = df.loc[:, i].apply(lambda x: (x/first)*100)
 
     return df
 

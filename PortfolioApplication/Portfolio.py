@@ -20,6 +20,7 @@ Then the TWRoR will be calculated and will the return in this point in time
 
 
 class Portfolio:
+    '''The Basic Structure while operating on Transactions made and any portfolio related calculations'''
     # initialize with transactions data so you have the data immediately and can start transforming it
     def __init__(self):
         # create basic properties of the class
@@ -44,7 +45,7 @@ class Portfolio:
         # master most recent all star inclusions all most all relevant information included
         self.combined_transactions = self.merge_transactions()
         self.portfolio = self.form_portfolio()
-        self.amount_schedule = self.create_amount_schedule(list(self.fund_states['Date']))
+        # self.amount_schedule = self.create_amount_schedule(list(self.fund_states['Date']))
 
         # characteristics
         self.portfolio_opening = self.portfolio_start().values[0]
@@ -324,8 +325,23 @@ class Portfolio:
 
         mask = (transactions['Security'] == 'Alternate')
         interim = transactions.loc[mask]
-        change = interim['Change'].sum()
-        return change
+
+        # adjust bookings
+        interim = interim.set_index('Date')
+        change = interim.loc[:, ['Change']].sum()
+
+        # adjust bookings
+        extras = Dbm.get_alternative_investments()
+        extras = extras.loc[:, ['Date', 'NetChange']]
+        extras.loc[:, ['Date']] = extras.loc[:, ['Date']].apply(pd.to_datetime)
+
+        mask2 = (extras['Date'] <= pd.to_datetime(date))
+
+        extras = extras.loc[mask2]
+        adjustment = extras.loc[:, ['NetChange']].sum()
+
+        adj_change = float(change) - float(adjustment)
+        return adj_change
 
     def create_amount_schedule(self, dates=None, date_is_index=False):
         if dates is None:
@@ -347,7 +363,10 @@ class Portfolio:
                     else:
                         mask = (self.combined_transactions['Date'] <= pd.to_datetime(date))
                         transactions = self.combined_transactions.loc[mask]
+
+                        # compute the cash position left after all transactions fees
                         cash = transactions['Change'].sum()
+                        # the sum of all fees that happend in that TimeFrame are computed
                         cash -= self.get_fees(date=date)
                         interim.append(cash)
                 amounts = np.append(amounts, [interim], axis=0)
@@ -418,10 +437,10 @@ class Portfolio:
         frame = frame.append(cash, ignore_index=True)
         frame = frame.append(alter, ignore_index=True)
 
+        # comparison is used because 'if cond is True' gives ERROR
         buy_mask = (frame['In/Out'] == True)
         buys = frame.loc[buy_mask].copy()
         buys.loc[:, ['Change']] = buys['Change'].apply(self.turn_negative)
-        # buys.loc[:, ['Change']] = interim
 
         sell_mask = (frame['In/Out'] == False)
         sells = frame.loc[sell_mask]
@@ -474,9 +493,9 @@ class Portfolio:
             structure.loc['Amount', ['Alternate']] = structure.loc['Position', ['Alternate']]
         return structure
 
-    def create_portfolio_value(self, dates=None):
+    def create_portfolio_value(self, dates: list=None):
         if dates is None:
-            dates = self.daterange()
+            dates = self.daterange_opening()
         portfolio_amounts = self.create_amount_schedule(dates=dates)
         data_request = list(filter(lambda x: x != 'Alternate' and x != 'Cash' and x != 'Date',
                                    portfolio_amounts.columns))
@@ -501,7 +520,7 @@ class Portfolio:
             structure.loc[:, i] = structure[i].multiply(basic[i])
 
         structure.loc[:, ['Alternate']] = structure.loc[:, ['Alternate']].apply(abs)
-
+        # structure = structure.drop('Alternate', axis=1)
         # create sum of value column
         data = structure.values
         sums = np.nansum(data, axis=1)
@@ -517,7 +536,7 @@ class Portfolio:
         return self.combined_transactions.loc[0, ['Date']]
 
     def plot_performance(self):
-        to_plot = self.normalize_prices()
+        to_plot = self.normalize()
 
         fig, ax = plt.subplots()
 
@@ -527,7 +546,7 @@ class Portfolio:
         ax.yaxis.set_major_formatter(PercentFormatter())
 
         ax.plot(to_plot)
-
+        # to_plot.plot()
         plt.show()
 
     @staticmethod
@@ -541,26 +560,33 @@ class Portfolio:
         return x
 
     @staticmethod
-    def turn_negative(x):
+    def turn_negative(x: float):
         return -x
 
-    def normalize_prices(self):
-        df = self.portfolio_valuation.loc[:, 'Total Value']
+    def normalize(self, simple: bool=True):
+        if simple:
+            return self.normalize_prices_simp()
+        else:
+            return self.normalize_prices_twrr()
+
+    # get simple returns
+    def normalize_prices_simp(self, df=None):
+        if df is None:
+            df = self.portfolio_valuation.loc[:, 'Total Value']
         dates = self.fund_states['Date']
         dates_to_value = np.zeros((1, 2))
         for date in dates:
             index = df.index.get_loc(date)
             dates_to_value = np.append(dates_to_value, [[date, df.iloc[index]]], axis=0)
-        dates_to_value = dates_to_value[1::]
+
+        tracking = []
         if isinstance(df, pd.Series):
-            structure = np.empty((1,2))
+            structure = np.empty((1, 2))
             dates = self.fund_states['Date']
             dates_to_value = np.zeros((1, 2))
             for date in dates:
                 index = df.index.get_loc(date)
                 dates_to_value = np.append(dates_to_value, [[date, df.iloc[index]]], axis=0)
-            index = "{}".format(df.iloc[:].first_valid_index())
-            index = index[:10]
             date_to_value_series = pd.Series(data=dates_to_value[:, 1], index=dates_to_value[:, 0])
 
             for date in reversed(dates_to_value[1:, 0]):
@@ -568,7 +594,64 @@ class Portfolio:
 
                 # mask = (df > pd.to_datetime(date))
                 interim_no_ind = df.reset_index()
-                interim = interim_no_ind.where(interim_no_ind['Date'] >= pd.to_datetime(date))
+                interim_no_ind.loc[:, ['Date']] = interim_no_ind.loc[:, ['Date']].apply(pd.to_datetime)
+                if len(tracking) == 0:
+                    mask = (interim_no_ind['Date'] >= pd.to_datetime(date))
+                else:
+                    mask = ((interim_no_ind['Date'] >= pd.to_datetime(date)) &
+                            (interim_no_ind['Date'] < pd.to_datetime(tracking[-1])))
+                interim = interim_no_ind.loc[mask]
+                interim = interim.dropna()
+                interim = interim.set_index('Date')
+
+                cashbase = self.get_net_cash(date)
+                interim = interim.apply(lambda x: (x / cashbase) * 100)
+                data = interim.reset_index().values
+                structure = np.append(structure, data, axis=0)
+
+                tracking.append(date)
+
+            output = pd.DataFrame(data=structure[1::], columns=['Date', 'Return'])
+            # output.loc[:, ['Date']] = output.loc[:, ['Date']].apply(pd.to_datetime)
+
+            output = output.set_index('Date')
+            output = output.sort_index(axis=0)
+
+            return output
+        else:
+            pass
+
+    # normalizes for Time Weighted Rate of Return
+    def normalize_prices_twrr(self):
+        df = self.portfolio_valuation.loc[:, 'Total Value']
+        dates = self.fund_states['Date']
+        dates_to_value = np.zeros((1, 2))
+        for date in dates:
+            index = df.index.get_loc(date)
+            dates_to_value = np.append(dates_to_value, [[date, df.iloc[index]]], axis=0)
+
+        tracking = []
+        if isinstance(df, pd.Series):
+            structure = np.empty((1,2))
+            dates = self.fund_states['Date']
+            dates_to_value = np.zeros((1, 2))
+            for date in dates:
+                index = df.index.get_loc(date)
+                dates_to_value = np.append(dates_to_value, [[date, df.iloc[index]]], axis=0)
+            date_to_value_series = pd.Series(data=dates_to_value[:, 1], index=dates_to_value[:, 0])
+
+            for date in reversed(dates_to_value[1:, 0]):
+                start = float(date_to_value_series.loc[date])
+
+                # mask = (df > pd.to_datetime(date))
+                interim_no_ind = df.reset_index()
+                interim_no_ind.loc[:, ['Date']] = interim_no_ind.loc[:, ['Date']].apply(pd.to_datetime)
+                if len(tracking) == 0:
+                    mask = (interim_no_ind['Date'] >= pd.to_datetime(date))
+                else:
+                    mask = ((interim_no_ind['Date'] >= pd.to_datetime(date)) &
+                            (interim_no_ind['Date'] < pd.to_datetime(tracking[-1])))
+                interim = interim_no_ind.loc[mask]
                 interim = interim.dropna()
                 interim = interim.set_index('Date')
 
@@ -576,14 +659,20 @@ class Portfolio:
                 data = interim.reset_index().values
                 structure = np.append(structure, data, axis=0)
 
-            output = pd.DataFrame(data=structure, columns=['Date', 'Return'])
+                tracking.append(date)
+
+            output = pd.DataFrame(data=structure[1::], columns=['Date', 'Return'])
+            # output.loc[:, ['Date']] = output.loc[:, ['Date']].apply(pd.to_datetime)
+
             output = output.set_index('Date')
+            output = output.sort_index(axis=0)
 
             return output
         else:
             pass
 
-    def daterange(self, date1=None, date2=None):
+    def daterange_opening(self, date1=None, date2=None):
+        '''Creates a list of Dates from date1 to date2'''
         if date1 is None:
             date1 = self.portfolio_opening
         if date2 is None:
@@ -594,13 +683,32 @@ class Portfolio:
 
         return dates
 
+    @staticmethod
+    def daterange(date1, date2):
+        dates = []
+        for n in range(int((date2 - date1).days) + 1):
+            dates.append(date1 + dt.timedelta(n))
+
+        return dates
+
+    # Here come the connectors which link this Class to the other files and operations
+    def connector_performance_viewer(self, dates: list):
+        '''crates a series which can be appended to the performance_viewer DataFrame'''
+        df = self.create_portfolio_value(dates=dates)
+        d = df.loc[:, ['Total Value']]
+        s = df.loc[:, 'Total Value']
+        f = df.index
+        series = df.loc[:, 'Total Value']
+        normalized = self.normalize_prices_simp(df=series)
+        return normalized
+
 
 # TODO expense already mapped but still need to arrange the code order/structure still error message
 # TODO cash after period calculation is based on before mentioned to-do
 # TODO there is still need to get the end Cash_balance
 if __name__ == '__main__':
     portfolio = Portfolio()
-    #
+
     # def daterange(date1, date2):
     #     dates = []
     #     for n in range(int((date2 - date1).days) + 1):
@@ -612,6 +720,8 @@ if __name__ == '__main__':
     # end_dt = dt.datetime.today()
     #
     # ddf = daterange(start_dt, end_dt)
-
-    portfolio.plot_performance()
-    portfolio.combined_transactions.to_excel('Transactions.xlsx')
+    #
+    # portfolio.plot_performance()
+    # # portfolio.create_amount_schedule(dates=ddf, date_is_index=True).to_excel('AmountSchedule.xlsx')
+    # # portfolio.combined_transactions.to_excel('CombinedTransactions.xlsx')
+    portfolio.portfolio_valuation.to_excel('PortfolioValuation.xlsx')

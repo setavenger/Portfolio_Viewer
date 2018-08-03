@@ -2,6 +2,8 @@
 import sqlite3
 
 import pandas as pd
+import numpy as np
+
 import PortfolioApplication.Computations as Cmp
 
 tickers = ['^GDAXI', "ETR:SHL", "ETR:IFX", 'PHH2.F', 'ABB.F']
@@ -17,6 +19,25 @@ def new_stocklist():
 
     c.execute('''CREATE TABLE IF NOT EXISTS stocklist
                      (name text, symbol text, category text)''')
+
+    conn.commit()
+    conn.close()
+
+
+def read_an_exc(name: str):
+    df = pd.read_excel(name)
+    data = df.values
+    print(df)
+
+
+def add_stock_excel(name: str):
+    df = pd.read_excel(name)
+    data = df.values
+
+    conn = sqlite3.connect(db)
+    c = conn.cursor()
+
+    c.executemany('''insert into main.stocklist values (?, ?, ?)''', data)
 
     conn.commit()
     conn.close()
@@ -81,16 +102,35 @@ def name_to_sym(name):
 
     row = c.fetchone()
 
-    conn.commit()
     conn.close()
 
     return row[1]
 
 
+def check_if_table_exists(name):
+    '''
+    insert name of the table you want to check (not the symbol)
+    if the table already exists the function will return True
+    if the table does not exist function returns False
+    '''
+    conn = sqlite3.connect(db)
+
+    sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'".format(name)
+
+    table = pd.read_sql_query(sql=sql, con=conn)
+
+    conn.close()
+
+    if table.empty is True:
+        return False
+    elif table.empty is False:
+        return True
+
+
 # returns a numpy array of all the names of the stocks stored in stocklist there are indexes in there to
 def get_stock_names():
     conn = sqlite3.connect(db)
-    df = pd.read_sql_query("select * from 'stocklist' WHERE category = 'Stock'", conn)
+    df = pd.read_sql_query("select * from 'stocklist' WHERE category != 'Index'", conn)
 
     conn.commit()
     conn.close()
@@ -127,6 +167,22 @@ def upload_security_transaction(date, name, typ, amount, price, fees, tax, notes
     c = conn.cursor()
     c.execute("INSERT INTO main.Transactions values (?,?,?,?,?,?,?,?,?,?,?)",
               (date, name, typ, symbol, amount, price, position, fees, tax, total_expense, notes))
+    conn.commit()
+    conn.close()
+
+
+def upload_portfolio_valuation(df: pd.DataFrame):
+    conn = sqlite3.connect(db)
+    c = conn.cursor()
+
+    checker = check_if_table_exists('PortfolioValuation')
+
+    if not checker:
+        df.to_sql('PortfolioValuation', conn)
+    elif checker:
+        c.execute('''drop table main.PortfolioValuation''')
+        df.to_sql('PortfolioValuation', conn)
+
     conn.commit()
     conn.close()
 
@@ -194,5 +250,31 @@ def get_alternative_investments():
     return transactions
 
 
+def get_portfolio_valuation(start, end):
+    conn = sqlite3.connect(db)
+
+    query = "SELECT * FROM main.PortfolioValuation WHERE DATE > DATE('{}') AND DATE < DATE('{}')".format(start, end)
+
+    df = pd.read_sql_query(query, conn, index_col='Date')
+    df = df.loc[:, 'Total Value']
+    conn.close()
+    return df
+
+
+def get_spot_portfolio_valuation(date):
+    conn = sqlite3.connect(db)
+    # c = conn.cursor()
+    query = "SELECT * FROM main.PortfolioValuation WHERE DATE = '{}'".format(date)
+
+    # c.execute(query)
+    # row = c.fetchone()
+    data = pd.read_sql_query(query, conn)
+    conn.close()
+
+    return data
+
+
 if __name__ == '__main__':
-    pass
+    add_stock(['iShares TecDAX(DE)', 'Twitter', 'Boeing'], ['EXS2.DE', 'TWR.DE', 'BCO.F'], ['ETF', 'Stock', 'Stock'])
+    # add_stock_excel('/Users/setor/PycharmProjects/PortfolioManager/PortfolioApplication/Extra Data/SymbolList.xlsx')
+    # print(get_spot_portfolio_valuation(pd.to_datetime('2018-04-03')))

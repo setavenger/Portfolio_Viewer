@@ -84,7 +84,7 @@ def find_new_values(df, date):
     return df
 
 
-def update(symbol):
+def update(symbol: str):
     conn = sqlite3.connect(db)
     c = conn.cursor()
 

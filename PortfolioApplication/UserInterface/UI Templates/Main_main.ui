@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1440</width>
-    <height>900</height>
+    <height>813</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -288,6 +288,70 @@
       </property>
       <layout class="QVBoxLayout" name="DistributionBackGround"/>
      </widget>
+     <widget class="QDateEdit" name="dateEdit_3">
+      <property name="geometry">
+       <rect>
+        <x>30</x>
+        <y>220</y>
+        <width>110</width>
+        <height>22</height>
+       </rect>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_6">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>200</y>
+        <width>101</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="text">
+       <string>Choose Date</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_7">
+      <property name="geometry">
+       <rect>
+        <x>130</x>
+        <y>40</y>
+        <width>281</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>.SF NS Text</family>
+        <pointsize>26</pointsize>
+        <weight>75</weight>
+        <italic>false</italic>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="text">
+       <string>Asset Distribution</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_2">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>270</y>
+        <width>114</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Update Plot</string>
+      </property>
+     </widget>
     </widget>
    </widget>
   </widget>
@@ -320,8 +384,15 @@
     </property>
     <addaction name="actionShow_Performance"/>
    </widget>
+   <widget class="QMenu" name="menuAssets">
+    <property name="title">
+     <string>Assets</string>
+    </property>
+    <addaction name="actionShow_Asset_Distribution"/>
+   </widget>
    <addaction name="menuTransactions"/>
    <addaction name="menuPerformance"/>
+   <addaction name="menuAssets"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionShow_Transactions">
@@ -342,6 +413,11 @@
   <action name="actionShow_Performance">
    <property name="text">
     <string>Show Performance</string>
+   </property>
+  </action>
+  <action name="actionShow_Asset_Distribution">
+   <property name="text">
+    <string>Show Asset Distribution</string>
    </property>
   </action>
  </widget>
